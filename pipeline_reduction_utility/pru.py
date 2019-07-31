@@ -15,7 +15,8 @@ class pipeline_reduction(object):
         ylabel - Y axis label (default: 'Y');
         min_weld_size - Resamples the original pipeline profile data to a minimum size size prior to further reduction (default: 12.5);
         n_pipe_sec - Required number of final pipeline sections (default: 200).
-        Returns: N/A"""
+        Returns: N/A
+        """
         
         #Initialise local variables
         self.df_raw = df
@@ -27,14 +28,18 @@ class pipeline_reduction(object):
         self.xend = df[xlabel].iloc[-1]
         self.ystart = df[ylabel].iloc[0]
         self.yend = df[ylabel].iloc[-1]
-                
+        
+        # Perform pipeline reduction
+        self._reduce()
+        
     def _process_df(self, df, interp = True, **kwargs):
-        'Purpose: Process input Pandas dataframe for discretisation.'
-        'Inputs:'
-        'df: A Pandas dataframe object with pipeline profile data;'
-        '*args: Required pipe section length if re-sampling;'
-        'interp: Resample dataset to a new pipeline length.'
-        'Returns: Pandas dataframe object with resampled data.'
+        """Purpose: Calculates length, elevation change and angles on the provided dataset. Reduces provided dataset to user specified size.
+        Inputs:
+        df - A Pandas dataframe object with pipeline profile data;
+        interp - Resample dataset to a new pipeline length (default = True).
+        *args - Required pipe section length if re-sampling;
+        Returns - Pandas dataframe object with resampled data.
+        """
         
         #Make a copy of the original dataframe
         df = df.copy()
@@ -97,57 +102,61 @@ class pipeline_reduction(object):
     
         return df_new
     
-    def solve(self, maxiter = 100):
-        'Purpose: Discretise and optimise the provided pipeline profile data.'
-        'Inputs: N/A'
-        'Outputs: N/A'
+    def _reduce(self):
+        """
+        'Purpose: Discretise / reduce the provided pipeline profile data.'
+        'Inputs - None'
+        'Returns - None'
+        """
         
         # Resample dataset to min. specified weld size
-        df_raw = self._process_df(self.df_raw, interp = True, new_size = self.min_weld_size)
+        self.df_raw = self._process_df(self.df_raw, interp = True, new_size = self.min_weld_size)
                 
         # Calculate size of each pipe section for dicretisation
-        length = df_raw['Length'].iloc[-1]
-        pipe_size_ds = length / self.n_pipe_sec
-        
-        # Generate a temp. discretised dataset, save best 'Y' values, sort by angles and save pipeline indices
-        df_inp = self._process_df(df_raw, interp = True, new_size = pipe_size_ds)
-        y_best = df_inp[self.ylabel].values
-        df_inp[1:] = df_inp[1:].sort_values(by = 'Angles').values
-        best_idx = df_inp['pipe_idx'].values / (len(df_inp) - 1)
-        
+        length = self.df_raw['Length'].iloc[-1]
+        self.pipe_size_ds = length / self.n_pipe_sec
+                
         # Generate the elevation profile by sorting angles from smallest to largest
-        df_ep = df_raw.copy()
-        df_ep[1:] = df_ep[1:].sort_values(by = 'Angles').values
+        self.df_ep = self.df_raw.copy()
+        self.df_ep[1:] = self.df_ep[1:].sort_values(by = 'Angles').values
         
         # Interpolate over elevation profile, which conserves the overall angle class distribution
-        df_ep = self._process_df(df_ep, interp = True, new_size = pipe_size_ds)
-                       
-        # Optimise overall pipeline profile
-        # Get best mse values
-        #mse_best = self._mse(df_ep, best_idx, y_best)
+        self.df_ep = self._process_df(self.df_ep, interp = True, new_size = self.pipe_size_ds)
+        
+    def solve(self, maxiter = 100):
+        """
+        Purpose: Improve the overall pipeline profile using the simulated annealing algorithm for 
+        """
+        # Generate a temp. discretised dataset, save best 'Y' values, sort by angles and save pipeline indices as initial guess for the solver
+        df_inp = self._process_df(self.df_raw, interp = True, new_size = self.pipe_size_ds)
+        y_best = df_inp[self.ylabel].values
+        df_inp[1:] = df_inp[1:].sort_values(by = 'Angles').values
+        init_idx = df_inp['pipe_idx'].values / (len(df_inp) - 1)
         
         # Optimiser algorithm
         #best_idx, mse_best = self._simulated_anneal(df_ep, mse_best, best_idx, y_best)
-        bounds = [(0, 1) for i in range(0, len(df_ep))]
-        result = optimize.dual_annealing(self._mse, bounds, x0 = best_idx, args = (df_ep, y_best), maxiter = maxiter)
+        bounds = [(0, 1) for i in range(0, len(self.df_ep))]
+        result = optimize.dual_annealing(self._mse, bounds, x0 = init_idx, args = (self.df_ep, y_best), maxiter = maxiter)
         
         # Estimate new optimised discretised pipeline profile
-        df_ep['pipe_idx'] = result.x
-        df_ep[1:] = df_ep[1:].sort_values(by = 'pipe_idx').values
-        self.df_op = self._process_df(df_ep, interp = False)
-        #self.mse = mse_best
-        
+        self.df_result = self.df_ep.copy()
+        self.df_result['pipe_idx'] = result.x
+        self.df_result[1:] = self.df_result[1:].sort_values(by = 'pipe_idx').values
+        self.df_result = self._process_df(self.df_result, interp = False)
+    
     def _angle_class(self, df, bins):
         pass
     
     def _mse(self, pipe_idx, *args):
-        'Purpose: Calculate the mean square error between the current profile and ideal elevation profile.'
-        'Inputs:'
-        'df: A Pandas dataframe with discretised pipeline profile data;'
-        'pipe_idx: New pipeline profile indices;'
-        'y_best: Best elevation profile.'
-        'Returns:'
-        'mse: Mean squared error between y_best and y_curr.'
+        """
+        Purpose: Calculate the mean square error between the current profile and ideal elevation profile.
+        Inputs:
+        df - A Pandas dataframe with discretised pipeline profile data;
+        pipe_idx - New pipeline profile indices;
+        y_best - Best elevation profile.
+        Returns:
+        mse - Mean squared error between y_best and y_curr.
+        """
         
         df = args[0]
         y_best = args[1]
