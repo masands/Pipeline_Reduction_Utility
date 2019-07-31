@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
-from scipy import interpolate
-from scipy.optimize import dual_annealing
+from scipy import interpolate, optimize
 import matplotlib.pyplot as plt
 import warnings
 
@@ -130,7 +129,7 @@ class pipeline_reduction(object):
         # Optimiser algorithm
         #best_idx, mse_best = self._simulated_anneal(df_ep, mse_best, best_idx, y_best)
         bounds = [(0, 1) for i in range(0, len(df_ep))]
-        result = dual_annealing(self._mse, bounds, x0 = best_idx, args = (df_ep, y_best), maxiter = maxiter)
+        result = optimize.dual_annealing(self._mse, bounds, x0 = best_idx, args = (df_ep, y_best), maxiter = maxiter)
         
         # Estimate new optimised discretised pipeline profile
         df_ep['pipe_idx'] = result.x
